@@ -2,20 +2,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { User, ChatMessage, MessageRole, ChatSession } from '../types';
 import { generateText, generateImage } from '../services/geminiService';
+import { LiveSession } from './LiveSession';
 
 interface ChatContainerProps {
   user: User;
   onLogout: () => void;
 }
 
-// Fixed the global type declaration for aistudio to avoid conflicts with existing types
+// Fixed global interface declaration to avoid modifier mismatch errors
 declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
   interface Window {
-    aistudio: AIStudio;
+    aistudio: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
   }
 }
 
@@ -29,6 +29,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [hasKey, setHasKey] = useState<boolean>(true);
+  const [isLive, setIsLive] = useState(false);
   
   const [mode, setMode] = useState<'restricted' | 'unrestricted'>('unrestricted');
   const [useThinking, setUseThinking] = useState(false);
@@ -53,7 +54,8 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) 
   const handleConnectKey = async () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
-      setHasKey(true); // Assume success per guidelines
+      // Assume success to mitigate race condition
+      setHasKey(true);
     }
   };
 
@@ -145,11 +147,13 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) 
 
   return (
     <div className="flex h-full overflow-hidden bg-black text-red-600 font-sans selection:bg-red-600 selection:text-black">
+      {isLive && <LiveSession mode={mode} onClose={() => setIsLive(false)} />}
+      
       {!hasKey && (
         <div className="absolute inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 text-center">
           <div className="max-w-md space-y-6">
             <h2 className="text-4xl font-black text-red-600 animate-pulse">CONNECTION_LOST</h2>
-            <p className="text-red-900 font-mono text-sm">A paid Google Cloud API Key is required to run ZAK-AI 3.0 on Vercel.</p>
+            <p className="text-red-900 font-mono text-sm">A paid Google Cloud API Key is required for LIVE mode on Vercel.</p>
             <button onClick={handleConnectKey} className="w-full py-4 bg-red-600 text-black font-black rounded-xl hover:bg-red-500 transition-colors">CONNECT_PROJECT</button>
             <p className="text-[10px] text-red-950 uppercase"><a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="underline">Billing Documentation</a></p>
           </div>
@@ -160,7 +164,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) 
         <div className="p-6 border-b border-red-900/50 flex justify-between items-center bg-red-950/10">
           <div className="flex flex-col">
             <span className="text-2xl font-black tracking-tighter text-red-600 drop-shadow-[0_0_15px_rgba(220,38,38,0.5)]">ZAK-AI</span>
-            <span className="text-[10px] font-bold text-red-900 uppercase tracking-widest mt-0.5">VERCEL_DEPLOY_READY</span>
+            <span className="text-[10px] font-bold text-red-900 uppercase tracking-widest mt-0.5">VERCEL_LIVE_READY</span>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-red-950 hover:text-red-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg></button>
         </div>
@@ -203,6 +207,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) 
             </div>
           </div>
           <div className="flex items-center gap-2">
+             <button onClick={() => setIsLive(true)} className="px-3 py-1.5 rounded-xl border border-red-600 bg-red-600/20 text-[9px] font-black text-red-500 hover:bg-red-600 hover:text-black">LIVE_LINK</button>
              <button onClick={() => setUseThinking(!useThinking)} className={`px-3 py-1.5 rounded-xl border text-[9px] font-black ${useThinking ? 'border-red-500 text-red-500 bg-red-500/20' : 'border-red-950 text-red-950'}`}>THINK</button>
              <button onClick={() => setUseSearch(!useSearch)} className={`px-3 py-1.5 rounded-xl border text-[9px] font-black ${useSearch ? 'border-orange-600 text-orange-600 bg-orange-600/20' : 'border-red-950 text-red-950'}`}>SEARCH</button>
           </div>
@@ -225,9 +230,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) 
                   <select value={imageSize} onChange={(e) => setImageSize(e.target.value as any)} className="bg-black border border-red-600 rounded-xl px-4 py-2 text-xs font-black text-red-500">
                     <option value="1K">1K</option><option value="2K">2K</option><option value="4K">4K</option>
                   </select>
-                </div>
-                <div className="pt-2 border-t border-red-900/30">
-                  <button onClick={handleConnectKey} className="w-full py-3 rounded-xl border border-dashed border-red-600 text-[10px] font-black text-red-600 hover:bg-red-600 hover:text-black">REFRESH_API_LINK</button>
                 </div>
               </div>
               <button onClick={() => setShowSettings(false)} className="w-full py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.4em] bg-red-600 text-black">CONFIRM_STATE</button>
