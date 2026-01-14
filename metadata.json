@@ -1,0 +1,8 @@
+{
+  "name": "Zak-AI",
+  "description": "A powerful, multi-modal AI companion featuring image generation, video animation, and advanced reasoning modes.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
