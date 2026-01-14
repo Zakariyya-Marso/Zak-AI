@@ -1,11 +1,22 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { User, ChatMessage, MessageRole, ChatSession } from '../types';
-import { generateText, generateImage, editImage } from '../services/geminiService';
+import { generateText, generateImage } from '../services/geminiService';
 
 interface ChatContainerProps {
   user: User;
   onLogout: () => void;
+}
+
+// Fixed the global type declaration for aistudio to avoid conflicts with existing types
+declare global {
+  interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  }
+  interface Window {
+    aistudio: AIStudio;
+  }
 }
 
 export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) => {
@@ -17,6 +28,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [hasKey, setHasKey] = useState<boolean>(true);
   
   const [mode, setMode] = useState<'restricted' | 'unrestricted'>('unrestricted');
   const [useThinking, setUseThinking] = useState(false);
@@ -27,6 +39,23 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isOwner = user.username.toLowerCase() === 'zaki';
+
+  useEffect(() => {
+    const checkKey = async () => {
+      if (window.aistudio) {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        setHasKey(selected);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleConnectKey = async () => {
+    if (window.aistudio) {
+      await window.aistudio.openSelectKey();
+      setHasKey(true); // Assume success per guidelines
+    }
+  };
 
   useEffect(() => {
     const updatedUser = { ...user, chatHistory };
@@ -95,15 +124,20 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) 
         const prompt = currentInput.replace('/gen ', '');
         addMessage({ role: MessageRole.USER, content: currentInput, type: 'text' });
         const imgUrl = await generateImage(prompt, imageSize, mode);
-        addMessage({ role: MessageRole.ASSISTANT, content: `Synthesized image for your ${mode} request.`, type: 'image', metadata: { imageUrl: imgUrl } });
+        addMessage({ role: MessageRole.ASSISTANT, content: `Synthesized for your ${mode} request.`, type: 'image', metadata: { imageUrl: imgUrl } });
       } else {
         addMessage({ role: MessageRole.USER, content: currentInput, type: 'text', metadata: selectedImage ? { imageUrl: selectedImage } : undefined });
         const { text, sources } = await generateText(currentInput, mode, useThinking, useSearch);
         addMessage({ role: MessageRole.ASSISTANT, content: text, type: 'text', metadata: { sources: sources.map((c: any) => c.web).filter(Boolean) } });
         setSelectedImage(null);
       }
-    } catch (err) {
-      addMessage({ role: MessageRole.ASSISTANT, content: `ERROR: ${err instanceof Error ? err.message : 'Anomaly detected.'}`, type: 'text' });
+    } catch (err: any) {
+      if (err.message?.includes("Requested entity was not found")) {
+        setHasKey(false);
+        addMessage({ role: MessageRole.ASSISTANT, content: "ERROR: API Key context lost. Re-authentication required.", type: 'text' });
+      } else {
+        addMessage({ role: MessageRole.ASSISTANT, content: `ERROR: ${err instanceof Error ? err.message : 'Anomaly detected.'}`, type: 'text' });
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -111,11 +145,22 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) 
 
   return (
     <div className="flex h-full overflow-hidden bg-black text-red-600 font-sans selection:bg-red-600 selection:text-black">
+      {!hasKey && (
+        <div className="absolute inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6 text-center">
+          <div className="max-w-md space-y-6">
+            <h2 className="text-4xl font-black text-red-600 animate-pulse">CONNECTION_LOST</h2>
+            <p className="text-red-900 font-mono text-sm">A paid Google Cloud API Key is required to run ZAK-AI 3.0 on Vercel.</p>
+            <button onClick={handleConnectKey} className="w-full py-4 bg-red-600 text-black font-black rounded-xl hover:bg-red-500 transition-colors">CONNECT_PROJECT</button>
+            <p className="text-[10px] text-red-950 uppercase"><a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="underline">Billing Documentation</a></p>
+          </div>
+        </div>
+      )}
+
       <aside className={`glass border-r border-red-900/40 transition-all duration-500 flex flex-col ${isSidebarOpen ? 'w-80' : 'w-0 opacity-0 -translate-x-full'}`}>
         <div className="p-6 border-b border-red-900/50 flex justify-between items-center bg-red-950/10">
           <div className="flex flex-col">
             <span className="text-2xl font-black tracking-tighter text-red-600 drop-shadow-[0_0_15px_rgba(220,38,38,0.5)]">ZAK-AI</span>
-            <span className="text-[10px] font-bold text-red-900 uppercase tracking-widest mt-0.5">VERCEL_EDGE_ACTIVE</span>
+            <span className="text-[10px] font-bold text-red-900 uppercase tracking-widest mt-0.5">VERCEL_DEPLOY_READY</span>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-red-950 hover:text-red-500"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg></button>
         </div>
@@ -180,6 +225,9 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ user, onLogout }) 
                   <select value={imageSize} onChange={(e) => setImageSize(e.target.value as any)} className="bg-black border border-red-600 rounded-xl px-4 py-2 text-xs font-black text-red-500">
                     <option value="1K">1K</option><option value="2K">2K</option><option value="4K">4K</option>
                   </select>
+                </div>
+                <div className="pt-2 border-t border-red-900/30">
+                  <button onClick={handleConnectKey} className="w-full py-3 rounded-xl border border-dashed border-red-600 text-[10px] font-black text-red-600 hover:bg-red-600 hover:text-black">REFRESH_API_LINK</button>
                 </div>
               </div>
               <button onClick={() => setShowSettings(false)} className="w-full py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.4em] bg-red-600 text-black">CONFIRM_STATE</button>
