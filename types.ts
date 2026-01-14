@@ -1,9 +1,4 @@
 
-export enum AIModelMode {
-  RESTRICTED = 'RESTRICTED',
-  UNRESTRICTED = 'UNRESTRICTED'
-}
-
 export enum MessageRole {
   USER = 'user',
   ASSISTANT = 'assistant',
